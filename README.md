@@ -1,807 +1,859 @@
-# AUTO REPORTS AMISR-14
+# AUTO_REPORTS_AMISR_14
 
-Automatización para actualizar reportes de operación del radar AMISR-14 a partir del archivo `REPORTE_DIGDT_2026.csv` publicado en GitHub.
+Automatización de reportes de operación del radar **AMISR-14** del Radio Observatorio de Jicamarca (ROJ) – IGP.
 
-El proyecto contempla dos mecanismos:
+## 1. Flujo del proyecto
 
-1. `actualizar_google_sheets.py`: actualiza celdas específicas de un documento nativo de Google Sheets mediante `gspread`.
-2. `actualizar_google_drive.py`: descarga un archivo `.xlsx` desde Google Drive, modifica únicamente las celdas necesarias con `openpyxl` y vuelve a subir el mismo archivo `.xlsx` a Drive.
+```text
+Datos AMISR-14
+      │
+      ▼
+auto_scanner_2026.py
+      │
+      ▼
+REPORTE_AUTOMATIZADO_2026.csv
+      │
+      ▼
+auto_reporte_2026.py
+      │
+      ▼
+REPORTE_DIGDT_2026.csv
+      │
+      ▼
+auto_send_2026.py
+      │
+      ▼
+GitHub
+      │
+      ▼
+actualiza_google_drive_final.py
+      │
+      ▼
+Google Drive
+      │
+      ▼
+DONE_POI 2026 ROJ.xlsx
+```
 
 ---
 
-## 1. Estructura recomendada del proyecto
+## 2. Archivos principales
 
 ```text
 AUTO_REPORTS_AMISR_14/
-├── actualizar_google_sheets.py
-├── actualizar_google_drive.py
+├── actualiza_google_drive_final.py
+├── requirements.txt
 ├── README.md
 ├── .gitignore
-└── requirements.txt
+├── cron_github.log
+└── cron_google_drive.log
 ```
 
-Las credenciales deben estar **fuera del repositorio**:
-
-```text
-/home/soporte/.google/
-└── amisr-service-account.json
-```
-
-No se recomienda guardar `credentials.json` dentro de `AUTO_REPORTS_AMISR_14`.
-
----
-
-# 2. ¿Cómo evitar subir `credentials.json` a GitHub?
-
-La mejor práctica es combinar dos medidas:
-
-1. Guardar las credenciales fuera del repositorio.
-2. Añadirlas al `.gitignore` como protección adicional.
-
-Crear el archivo:
-
-```bash
-cd /home/soporte/AUTO_REPORTS_AMISR_14
-nano .gitignore
-```
-
-Contenido recomendado:
-
-```gitignore
-# Credenciales Google
-credentials.json
-*.json
-
-# Python
-__pycache__/
-*.py[cod]
-*.so
-
-# Entornos virtuales
-venv/
-.venv/
-env/
-
-# Logs
-*.log
-
-# Archivos temporales
-*.tmp
-*.bak
-~$
-
-# Archivos Excel locales
-*.xlsx
-```
-
-### Nota sobre `*.json`
-
-Si el repositorio necesita almacenar otros archivos JSON que no sean secretos, es preferible no bloquear todos los JSON. En ese caso utilizar solamente:
-
-```gitignore
-credentials.json
-```
-
-o el nombre específico:
-
-```gitignore
-amisr-service-account.json
-```
-
----
-
-# 3. Si `credentials.json` ya fue agregado a Git
-
-Agregar el archivo a `.gitignore` no elimina un archivo que Git ya está siguiendo.
-
-Si todavía no se hizo un commit, puede retirarse del seguimiento con:
-
-```bash
-git rm --cached credentials.json
-```
-
-Después:
-
-```bash
-git add .gitignore
-git commit -m "Protege credenciales de Google"
-```
-
-## Si la credencial ya fue subida a GitHub
-
-Si el JSON con la clave privada ya llegó al repositorio remoto, se debe considerar la credencial comprometida.
-
-El procedimiento recomendado es:
-
-1. Revocar/eliminar la clave de la cuenta de servicio desde Google Cloud.
-2. Generar una nueva clave JSON.
-3. Guardar la nueva clave fuera del repositorio.
-4. Eliminar la credencial expuesta del historial si corresponde.
-5. Verificar nuevamente el repositorio antes de publicarlo.
-
-No es suficiente con borrar `credentials.json` del último commit si la clave continúa en el historial de Git.
-
----
-
-# 4. Ubicación recomendada de las credenciales
-
-En el servidor `IGP-168` se recomienda:
-
-```bash
-mkdir -p /home/soporte/.google
-```
-
-Guardar allí el archivo JSON, por ejemplo:
+Credenciales:
 
 ```text
 /home/soporte/.google/amisr-service-account.json
 ```
 
-Protegerlo:
-
-```bash
-chmod 600 /home/soporte/.google/amisr-service-account.json
-```
-
-La estructura queda:
-
-```text
-/home/soporte/
-├── AUTO_REPORTS_AMISR_14/
-│   ├── actualizar_google_sheets.py
-│   ├── actualizar_google_drive.py
-│   ├── README.md
-│   ├── .gitignore
-│   └── requirements.txt
-│
-└── .google/
-    └── amisr-service-account.json
-```
-
-De esta manera, el repositorio contiene el código, pero no contiene la clave privada.
+Las credenciales no deben estar dentro del repositorio.
 
 ---
 
-# 5. Configuración de las credenciales
+# 3. Dependencias
 
-Los scripts pueden utilizar una ruta absoluta:
-
-```python
-CREDENTIALS = "/home/soporte/.google/amisr-service-account.json"
-```
-
-Otra opción es utilizar una variable de entorno:
-
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/home/soporte/.google/amisr-service-account.json"
-```
-
-Y en Python:
-
-```python
-import os
-
-CREDENTIALS = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
-```
-
-Para una automatización mediante `cron`, es recomendable utilizar rutas absolutas y no depender del directorio de trabajo actual.
-
----
-
-# 6. Dependencias
-
-Instalar las librerías necesarias:
-
-```bash
-pip install pandas openpyxl gspread google-auth google-api-python-client
-```
-
-También se puede crear `requirements.txt`:
+`requirements.txt`:
 
 ```text
 pandas
 openpyxl
-gspread
 google-auth
 google-api-python-client
 ```
 
-Instalar todo con:
+Instalar:
 
 ```bash
-pip install -r requirements.txt
+/home/soporte/anaconda3/bin/pip install -r requirements.txt
+```
+
+Validar:
+
+```bash
+/home/soporte/anaconda3/bin/python -c "import pandas, openpyxl, google.auth, googleapiclient; print('OK - todas las dependencias están instaladas')"
+```
+
+Resultado esperado:
+
+```text
+OK - todas las dependencias están instaladas
 ```
 
 ---
 
-# 7. Fuente de datos
+# 4. `auto_scanner_2026.py`
 
-Los scripts utilizan el siguiente CSV publicado en GitHub:
+Escanea los datos AMISR-14 y genera:
+
+```text
+REPORTE_AUTOMATIZADO_2026.csv
+```
+
+Directorio predeterminado:
+
+```text
+/mnt/data_amisr/
+```
+
+Ejecutar:
+
+```bash
+/home/soporte/anaconda3/bin/python auto_scanner_2026.py
+```
+
+También permite indicar otro directorio:
+
+```bash
+/home/soporte/anaconda3/bin/python auto_scanner_2026.py /media/soporte/Expansion/AMISR/2026
+```
+
+Tipos reconocidos:
+
+```text
+ISR
+ESF
+LPD
+MET
+```
+
+El scanner protege la información histórica: si encuentra menos datos en disco que los registrados previamente en el CSV, no reduce los valores existentes.
+
+---
+
+# 5. `auto_reporte_2026.py`
+
+Lee:
+
+```text
+REPORTE_AUTOMATIZADO_2026.csv
+```
+
+y genera:
+
+```text
+REPORTE_DIGDT_2026.csv
+```
+
+Agrupa por:
+
+```text
+MES + TIPO
+```
+
+y suma:
+
+```text
+GB
+HORAS
+```
+
+Ejecutar:
+
+```bash
+/home/soporte/anaconda3/bin/python auto_reporte_2026.py
+```
+
+El resultado tiene la estructura:
+
+```csv
+MES,TIPO,GB,HORAS
+AGOSTO,ISR,...
+AGOSTO,ESF,...
+SEPTIEMBRE,ISR,...
+SEPTIEMBRE,ESF,...
+```
+
+---
+
+# 6. `auto_send_2026.py`
+
+Este script publica/actualiza los archivos CSV generados por el proceso en el repositorio de GitHub.
+
+Archivos principales:
+
+```text
+REPORTE_AUTOMATIZADO_2026.csv
+REPORTE_DIGDT_2026.csv
+```
+
+Flujo:
+
+```text
+auto_scanner_2026.py
+        │
+        ▼
+REPORTE_AUTOMATIZADO_2026.csv
+        │
+        ▼
+auto_reporte_2026.py
+        │
+        ▼
+REPORTE_DIGDT_2026.csv
+        │
+        ▼
+auto_send_2026.py
+        │
+        ▼
+GitHub
+```
+
+Ejecutar:
+
+```bash
+cd /home/soporte/AUTO_REPORTS_AMISR_14
+/home/soporte/anaconda3/bin/python auto_send_2026.py
+```
+
+No almacenar tokens de GitHub directamente en el código fuente ni subirlos al repositorio.
+
+---
+
+# 7. `actualiza_google_drive_final.py`
+
+Este script toma el archivo:
+
+```text
+REPORTE_DIGDT_2026.csv
+```
+
+publicado en GitHub y utiliza sus valores para actualizar el archivo:
+
+```text
+DONE_POI 2026 ROJ.xlsx
+```
+
+almacenado en Google Drive.
+
+Archivo:
+
+```text
+DONE_POI 2026 ROJ.xlsx
+```
+
+ID:
+
+```text
+1NQfdeLyCrD97uTQYo3BttK26JYXuaRzi
+```
+
+Fuente CSV:
 
 ```text
 https://raw.githubusercontent.com/sebastianVP/DATASETS_CLASE/refs/heads/main/REPORTE_DIGDT_2026.csv
 ```
 
-El reporte contiene, entre otras, las columnas:
+Ejecutar:
 
-```text
-MES,TIPO,GB,HORAS
+```bash
+cd /home/soporte/AUTO_REPORTS_AMISR_14
+/home/soporte/anaconda3/bin/python actualiza_google_drive_final.py
 ```
-
-El script normaliza `MES` y `TIPO`, convierte `HORAS` a numérico y obtiene las horas mediante filtros por mes y tipo de experimento.
 
 ---
 
-# 8. Datos utilizados para la actualización
+# 8. Paso a paso: cómo se generan los valores
 
-Actualmente se calculan:
+El proceso de actualización del Excel sigue esta secuencia:
 
 ```text
-AGOSTO_ISR
-AGOSTO_ESF
-SEPTIEMBRE_ISR
-SEPTIEMBRE_ESF
-OCTUBRE_ISR
+1. Datos AMISR-14
+        │
+        ▼
+2. Scanner
+        │
+        ▼
+3. HORAS por FECHA y TIPO
+        │
+        ▼
+4. Resumen mensual
+        │
+        ▼
+5. REPORTE_DIGDT_2026.csv
+        │
+        ▼
+6. Publicación en GitHub
+        │
+        ▼
+7. Lectura del CSV desde GitHub
+        │
+        ▼
+8. Separación MES + TIPO
+        │
+        ▼
+9. Obtención de ISR y ESF
+        │
+        ▼
+10. Actualización de celdas del Excel
+        │
+        ▼
+11. Guardado del XLSX
+        │
+        ▼
+12. Subida a Google Drive
+```
+
+---
+
+# 9. Paso 1 — Datos de AMISR-14
+
+El scanner analiza los directorios de datos:
+
+```text
+/mnt/data_amisr/
 ```
 
 Por ejemplo:
 
 ```text
-AGOSTO_ISR       : 142.40 horas
-AGOSTO_ESF       : 216.12 horas
-SEPTIEMBRE_ISR   : 160.26 horas
-SEPTIEMBRE_ESF   : 218.42 horas
-OCTUBRE_ISR      : 0.00 horas
+20260929.001
+20260929.002
+20260930.001
 ```
 
-Los valores no deben escribirse manualmente: se obtienen automáticamente del CSV de GitHub.
+Dentro de cada adquisición se identifican los experimentos mediante los archivos `.exp`.
+
+Los principales tipos utilizados para este reporte son:
+
+```text
+ISR
+ESF
+```
 
 ---
 
-# 9. `actualizar_google_sheets.py`
+# 10. Paso 2 — Generación de `REPORTE_AUTOMATIZADO_2026.csv`
 
-Este script está diseñado para trabajar con un documento **nativo de Google Sheets**.
-
-Utiliza principalmente:
+El scanner genera registros con:
 
 ```text
-gspread
-google-auth
-Google Sheets API
+FECHA
+TIPO
+SIZE (GB)
+HORAS
 ```
 
-## Flujo
+Ejemplo conceptual:
+
+```csv
+FECHA,TIPO,SIZE (GB),HORAS
+20260801,ISR,120.50,22.46
+20260801,ESF,85.30,31.68
+20260802,ISR,115.20,21.50
+```
+
+Estos datos representan la operación detectada para cada fecha y tipo de experimento.
+
+---
+
+# 11. Paso 3 — Generación de `REPORTE_DIGDT_2026.csv`
+
+`auto_reporte_2026.py` agrupa los registros por:
+
+```text
+MES + TIPO
+```
+
+Por ejemplo:
+
+```text
+AGOSTO + ISR
+AGOSTO + ESF
+SEPTIEMBRE + ISR
+SEPTIEMBRE + ESF
+```
+
+Luego suma las horas de todos los registros correspondientes.
+
+Resultado:
+
+```csv
+MES,TIPO,GB,HORAS
+AGOSTO,ISR,XXXX,XX.XX
+AGOSTO,ESF,XXXX,XX.XX
+SEPTIEMBRE,ISR,XXXX,XX.XX
+SEPTIEMBRE,ESF,XXXX,XX.XX
+```
+
+---
+
+# 12. Paso 4 — Publicación en GitHub
+
+`auto_send_2026.py` publica los archivos actualizados:
+
+```text
+REPORTE_AUTOMATIZADO_2026.csv
+REPORTE_DIGDT_2026.csv
+```
+
+El archivo utilizado posteriormente por Google Drive es:
+
+```text
+REPORTE_DIGDT_2026.csv
+```
+
+Fuente:
 
 ```text
 GitHub
-   │
-   ▼
-REPORTE_DIGDT_2026.csv
-   │
-   ▼
-pandas
-   │
-   ▼
-cálculo de horas
-   │
-   ▼
-Google Sheets API / gspread
-   │
-   ▼
-actualización de celdas
 ```
 
-## Hoja `Datos geofísicos válidos - DCG`
+Esto permite que el script de actualización de Google Drive siempre consuma el reporte publicado más recientemente.
 
-| Celda | Valor |
-|---|---|
-| `J14` | AGOSTO ISR |
-| `K14` | SEPTIEMBRE ISR |
-| `L14` | OCTUBRE ISR |
-| `J15` | AGOSTO ESF |
-| `K15` | SEPTIEMBRE ESF |
+---
 
-## Hoja de Instrumentación Ionosférica
+# 13. Paso 5 — Lectura del CSV desde GitHub
 
-| Celda | Valor |
-|---|---|
-| `J13` | AGOSTO ISR + ESF |
-| `K13` | SEPTIEMBRE ISR + ESF |
+`actualiza_google_drive_final.py` descarga:
 
-`L15` no se modifica porque OCTUBRE ESF no fue definido como una celda de actualización.
+```text
+REPORTE_DIGDT_2026.csv
+```
 
-## Configuración
-
-El script debe tener configurados:
+y normaliza los campos:
 
 ```python
-URL_CSV = "https://raw.githubusercontent.com/sebastianVP/DATASETS_CLASE/refs/heads/main/REPORTE_DIGDT_2026.csv"
-CREDENTIALS = "/home/soporte/.google/amisr-service-account.json"
-SPREADSHEET_ID = "ID_DEL_GOOGLE_SHEET"
+df["MES"] = df["MES"].astype(str).str.strip().str.upper()
+df["TIPO"] = df["TIPO"].astype(str).str.strip().str.upper()
+df["HORAS"] = pd.to_numeric(df["HORAS"], errors="coerce").fillna(0)
 ```
 
-La cuenta de servicio debe tener permiso de edición sobre el documento.
+Esto garantiza que:
 
-## Importante
+```text
+agosto
+Agosto
+AGOSTO
+```
 
-`gspread` requiere un documento nativo de Google Sheets. Si el archivo es un `.xlsx` almacenado en Drive, se debe utilizar `actualizar_google_drive.py` en lugar de este script.
+sean tratados como:
 
-## Ejecución
-
-```bash
-cd /home/soporte/AUTO_REPORTS_AMISR_14
-python actualizar_google_sheets.py
+```text
+AGOSTO
 ```
 
 ---
 
-# 10. `actualizar_google_drive.py`
+# 14. Paso 6 — Obtención de horas
 
-Este es el script utilizado actualmente para modificar el archivo Excel almacenado en Google Drive:
-
-```text
-DONE_POI 2026 ROJ.xlsx
-```
-
-No convierte el archivo a Google Sheets.
-
-Utiliza:
+Para cada combinación:
 
 ```text
-Google Drive API
-openpyxl
-pandas
+MES + TIPO
 ```
 
-## Flujo
+se obtiene la suma de horas.
 
-```text
-GitHub
-   │
-   ▼
-REPORTE_DIGDT_2026.csv
-   │
-   ▼
-pandas
-   │
-   ▼
-cálculo de horas
-   │
-   ▼
-Google Drive API
-   │
-   ▼
-descarga del XLSX
-   │
-   ▼
-openpyxl
-   │
-   ▼
-modificación de celdas
-   │
-   ▼
-subida del mismo XLSX
+La función utilizada conceptualmente es:
+
+```python
+obtener_horas(df, mes, tipo)
 ```
-
----
-
-# 11. Google Drive API
-
-Para este script es necesario habilitar **Google Drive API** en el mismo proyecto de Google Cloud utilizado para la cuenta de servicio.
-
-También se debe compartir el archivo Excel con el correo de la cuenta de servicio.
 
 Ejemplo:
 
 ```text
-xxxx@proyecto.iam.gserviceaccount.com
+obtener_horas(df, "AGOSTO", "ISR")
 ```
 
-Permiso recomendado:
+devuelve:
 
 ```text
-Editor
+AGOSTO_ISR
 ```
 
-No es necesario hacer público el archivo.
+Y:
+
+```text
+obtener_horas(df, "AGOSTO", "ESF")
+```
+
+devuelve:
+
+```text
+AGOSTO_ESF
+```
 
 ---
 
-# 12. Configuración de `actualizar_google_drive.py`
+# 15. Paso 7 — Generación dinámica de `horas`
 
-La configuración principal es:
+El script no define cada mes manualmente.
+
+Utiliza:
 
 ```python
-URL_CSV = "https://raw.githubusercontent.com/sebastianVP/DATASETS_CLASE/refs/heads/main/REPORTE_DIGDT_2026.csv"
-
-CREDENTIALS = "/home/soporte/.google/amisr-service-account.json"
-
-FILE_ID = "1NQfdeLyCrD97uTQYo3BttK26JYXuaRzi"
+MESES_COLUMNAS = {
+    "AGOSTO": "J",
+    "SEPTIEMBRE": "K",
+    "OCTUBRE": "L",
+    "NOVIEMBRE": "M",
+    "DICIEMBRE": "N"
+}
 ```
 
-El `FILE_ID` identifica actualmente:
-
-```text
-DONE_POI 2026 ROJ.xlsx
-```
-
-No debe confundirse con el ID de otro archivo o de un Google Sheet diferente.
-
----
-
-# 13. Obtención del `FILE_ID`
-
-Si el enlace tiene una estructura como:
-
-```text
-https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view
-```
-
-el ID es:
-
-```text
-1AbCdEfGhIjKlMnOpQrStUvWxYz
-```
-
-Ese valor se coloca en:
+y genera automáticamente:
 
 ```python
-FILE_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz"
+horas = {
+    f"{mes}_{tipo}": obtener_horas(df, mes, tipo)
+    for mes in MESES_COLUMNAS
+    for tipo in ["ISR", "ESF"]
+}
+```
+
+Se generan:
+
+```text
+AGOSTO_ISR
+AGOSTO_ESF
+
+SEPTIEMBRE_ISR
+SEPTIEMBRE_ESF
+
+OCTUBRE_ISR
+OCTUBRE_ESF
+
+NOVIEMBRE_ISR
+NOVIEMBRE_ESF
+
+DICIEMBRE_ISR
+DICIEMBRE_ESF
 ```
 
 ---
 
-# 14. Hojas del archivo Excel
+# 16. Paso 8 — Actualización de la hoja DCG
 
-El archivo actual contiene, entre otras, hojas como:
+La hoja:
 
 ```text
-Operatividad
-Instrumentación Ionosférica ...
 Datos geofísicos válidos - DCG
-Hoja 3
-ISR+JULIA
-OTROS RADARES
-RADARES HF
 ```
 
-El script utiliza una búsqueda flexible para encontrar las hojas, especialmente la hoja de Instrumentación Ionosférica, evitando depender de que el nombre completo coincida exactamente.
+recibe directamente las horas de ISR y ESF.
+
+## ISR — fila 14
+
+```text
+AGOSTO      → J14
+SEPTIEMBRE  → K14
+OCTUBRE     → L14
+NOVIEMBRE   → M14
+DICIEMBRE   → N14
+```
+
+Equivalente:
+
+```text
+J14 = AGOSTO_ISR
+K14 = SEPTIEMBRE_ISR
+L14 = OCTUBRE_ISR
+M14 = NOVIEMBRE_ISR
+N14 = DICIEMBRE_ISR
+```
+
+## ESF — fila 15
+
+```text
+AGOSTO      → J15
+SEPTIEMBRE  → K15
+OCTUBRE     → L15
+NOVIEMBRE   → M15
+DICIEMBRE   → N15
+```
+
+Equivalente:
+
+```text
+J15 = AGOSTO_ESF
+K15 = SEPTIEMBRE_ESF
+L15 = OCTUBRE_ESF
+M15 = NOVIEMBRE_ESF
+N15 = DICIEMBRE_ESF
+```
 
 ---
 
-# 15. Celdas modificadas en el Excel
+# 17. Paso 9 — Actualización de la hoja DIGDT
+
+La hoja:
+
+```text
+Instrumentación Ionosférica
+```
+
+recibe el total mensual de operación.
+
+El total se calcula:
+
+```text
+TOTAL = ISR + ESF
+```
+
+## Fila 13
+
+```text
+J13 = AGOSTO_ISR + AGOSTO_ESF
+K13 = SEPTIEMBRE_ISR + SEPTIEMBRE_ESF
+L13 = OCTUBRE_ISR + OCTUBRE_ESF
+M13 = NOVIEMBRE_ISR + NOVIEMBRE_ESF
+N13 = DICIEMBRE_ISR + DICIEMBRE_ESF
+```
+
+Ejemplo:
+
+```text
+AGOSTO_ISR = 100.50
+AGOSTO_ESF = 200.25
+
+J13 = 300.75
+```
+
+El resultado se redondea a dos decimales.
+
+---
+
+# 18. Resumen de celdas actualizadas
 
 ## `Datos geofísicos válidos - DCG`
 
-```text
-J14 → AGOSTO ISR
-K14 → SEPTIEMBRE ISR
-L14 → OCTUBRE ISR
+| Celda | Valor          |
+| ----- | -------------- |
+| `J14` | AGOSTO_ISR     |
+| `K14` | SEPTIEMBRE_ISR |
+| `L14` | OCTUBRE_ISR    |
+| `M14` | NOVIEMBRE_ISR  |
+| `N14` | DICIEMBRE_ISR  |
+| `J15` | AGOSTO_ESF     |
+| `K15` | SEPTIEMBRE_ESF |
+| `L15` | OCTUBRE_ESF    |
+| `M15` | NOVIEMBRE_ESF  |
+| `N15` | DICIEMBRE_ESF  |
 
-J15 → AGOSTO ESF
-K15 → SEPTIEMBRE ESF
-```
+## `Instrumentación Ionosférica`
 
-## Hoja de Instrumentación Ionosférica
-
-```text
-J13 → AGOSTO ISR + AGOSTO ESF
-K13 → SEPTIEMBRE ISR + SEPTIEMBRE ESF
-```
-
-El script **no reemplaza las hojas completas**. Descarga el Excel, modifica únicamente esas celdas y vuelve a subir el mismo archivo.
-
----
-
-# 16. Ejecución de `actualizar_google_drive.py`
-
-Desde:
-
-```bash
-cd /home/soporte/AUTO_REPORTS_AMISR_14
-```
-
-ejecutar:
-
-```bash
-python actualizar_google_drive.py
-```
-
-Una ejecución correcta debe mostrar una secuencia similar a:
-
-```text
-======================================================================
- ACTUALIZACIÓN REPORTE AMISR-14 - GOOGLE DRIVE
-======================================================================
-
-📥 Leyendo reporte desde GitHub...
-
-📊 DATOS OBTENIDOS
-   AGOSTO_ISR          : ...
-   AGOSTO_ESF          : ...
-   SEPTIEMBRE_ISR      : ...
-   SEPTIEMBRE_ESF      : ...
-   OCTUBRE_ISR         : ...
-
-☁️ Conectando con Google Drive...
-📄 Archivo: DONE_POI 2026 ROJ.xlsx
-
-📥 Descargando archivo XLSX...
-
-📝 Modificando celdas...
-
-📤 Subiendo archivo actualizado a Google Drive...
-
-======================================================================
- ✅ ARCHIVO ACTUALIZADO CORRECTAMENTE
-======================================================================
-```
+| Celda | Fórmula                         |
+| ----- | ------------------------------- |
+| `J13` | AGOSTO_ISR + AGOSTO_ESF         |
+| `K13` | SEPTIEMBRE_ISR + SEPTIEMBRE_ESF |
+| `L13` | OCTUBRE_ISR + OCTUBRE_ESF       |
+| `M13` | NOVIEMBRE_ISR + NOVIEMBRE_ESF   |
+| `N13` | DICIEMBRE_ISR + DICIEMBRE_ESF   |
 
 ---
 
-# 17. Qué ocurre durante la actualización
+# 19. Actualización dinámica
 
-El script realiza estas operaciones:
-
-1. Descarga `REPORTE_DIGDT_2026.csv` desde GitHub.
-2. Procesa los datos con `pandas`.
-3. Calcula las horas ISR y ESF requeridas.
-4. Se autentica en Google Drive mediante la cuenta de servicio.
-5. Busca el archivo mediante `FILE_ID`.
-6. Descarga temporalmente el `.xlsx`.
-7. Abre el Excel con `openpyxl`.
-8. Busca las hojas requeridas.
-9. Modifica las celdas definidas.
-10. Guarda el Excel en memoria.
-11. Reemplaza el contenido del mismo archivo en Google Drive.
-
-El archivo continúa siendo:
-
-```text
-DONE_POI 2026 ROJ.xlsx
-```
-
----
-
-# 18. Recomendación de respaldo
-
-Antes de la primera ejecución sobre el archivo oficial, es recomendable crear una copia de seguridad del `.xlsx` en Google Drive.
-
-Esto permite recuperar el archivo si posteriormente se realizan cambios adicionales en la estructura del Excel.
-
----
-
-# 19. Crear el repositorio Git
-
-Desde el servidor:
-
-```bash
-cd /home/soporte/AUTO_REPORTS_AMISR_14
-git init
-```
-
-Verificar:
-
-```bash
-git status
-```
-
-Agregar los archivos del proyecto:
-
-```bash
-git add actualizar_google_sheets.py
-
-git add actualizar_google_drive.py
-
-git add README.md
-
-git add .gitignore
-
-git add requirements.txt
-```
-
-Crear el primer commit:
-
-```bash
-git commit -m "Agrega automatizacion de reportes AMISR-14"
-```
-
----
-
-# 20. Verificar que las credenciales NO estén en Git
-
-Antes de hacer `push`, ejecutar:
-
-```bash
-git status
-```
-
-y:
-
-```bash
-git ls-files
-```
-
-Debe aparecer algo parecido a:
-
-```text
-.gitignore
-README.md
-actualizar_google_drive.py
-actualizar_google_sheets.py
-requirements.txt
-```
-
-No debe aparecer:
-
-```text
-credentials.json
-amisr-service-account.json
-```
-
-También se puede revisar el contenido del proyecto:
-
-```bash
-grep -R "private_key" . --exclude-dir=.git
-```
-
-Si aparece una clave privada real, detener el proceso y retirarla antes de publicar el repositorio.
-
----
-
-# 21. Crear repositorio remoto en GitHub
-
-Después de crear el repositorio vacío en GitHub, configurar el remoto:
-
-```bash
-git remote add origin https://github.com/USUARIO/AUTO_REPORTS_AMISR_14.git
-```
-
-Verificar:
-
-```bash
-git remote -v
-```
-
-Renombrar la rama principal, si corresponde:
-
-```bash
-git branch -M main
-```
-
-Finalmente:
-
-```bash
-git push -u origin main
-```
-
-El repositorio contendrá el código y la documentación, pero las credenciales permanecerán fuera del repositorio.
-
----
-
-# 22. Seguridad para producción
-
-No colocar nunca en el código:
+Para agregar un nuevo mes, solamente se modifica:
 
 ```python
-private_key = "..."
+MESES_COLUMNAS = {
+    "AGOSTO": "J",
+    "SEPTIEMBRE": "K",
+    "OCTUBRE": "L",
+    "NOVIEMBRE": "M",
+    "DICIEMBRE": "N",
+    "ENERO": "O"
+}
 ```
 
-ni la clave privada completa de la cuenta de servicio.
-
-Tampoco publicar:
+Automáticamente se generarían:
 
 ```text
-credentials.json
-*.pem
-*.key
+ENERO_ISR
+ENERO_ESF
 ```
 
-La separación recomendada es:
+y se actualizarían:
 
 ```text
-GitHub
-   │
-   ├── código Python
-   ├── README.md
-   ├── requirements.txt
-   └── .gitignore
+O14
+O15
+O13
+```
 
-Servidor
-   │
-   └── /home/soporte/.google/
-       └── amisr-service-account.json
+No es necesario modificar los bucles de actualización.
+
+---
+
+# 20. Cron
+
+## Envío a GitHub
+
+Si `auto_send_2026.py` se automatiza a las 15:00:
+
+```cron
+# Envío automático de reportes AMISR-14 a GitHub
+0 15 * * * cd /home/soporte/AUTO_REPORTS_AMISR_14 && /home/soporte/anaconda3/bin/python auto_send_2026.py >> /home/soporte/AUTO_REPORTS_AMISR_14/cron_github.log 2>&1
+```
+
+## Actualización de Google Drive
+
+A las 16:00:
+
+```cron
+# Actualización automática reporte AMISR-14 - Google Drive
+0 16 * * * cd /home/soporte/AUTO_REPORTS_AMISR_14 && /home/soporte/anaconda3/bin/python actualiza_google_drive_final.py >> /home/soporte/AUTO_REPORTS_AMISR_14/cron_google_drive.log 2>&1
+```
+
+Esto permite que:
+
+```text
+15:00 → Generar/publicar CSV en GitHub
+16:00 → Leer CSV desde GitHub y actualizar Excel
 ```
 
 ---
 
-# 23. Automatización mediante cron
+# 21. Logs
 
-Si posteriormente se desea ejecutar automáticamente el proceso, se puede utilizar `cron`.
+GitHub:
 
-Ejemplo para ejecutar diariamente a las 12:00:
-
-```cron
-0 12 * * * cd /home/soporte/AUTO_REPORTS_AMISR_14 && /home/soporte/anaconda3/bin/python actualizar_google_drive.py >> /home/soporte/AUTO_REPORTS_AMISR_14/cron_google_drive.log 2>&1
+```text
+/home/soporte/AUTO_REPORTS_AMISR_14/cron_github.log
 ```
 
-Para comprobar el `cron`:
+Google Drive:
+
+```text
+/home/soporte/AUTO_REPORTS_AMISR_14/cron_google_drive.log
+```
+
+Consultar:
+
+```bash
+tail -n 50 /home/soporte/AUTO_REPORTS_AMISR_14/cron_github.log
+```
+
+```bash
+tail -n 50 /home/soporte/AUTO_REPORTS_AMISR_14/cron_google_drive.log
+```
+
+---
+
+# 22. Credenciales
+
+Google:
+
+```text
+/home/soporte/.google/amisr-service-account.json
+```
+
+Permisos:
+
+```bash
+chmod 600 /home/soporte/.google/amisr-service-account.json
+```
+
+Las credenciales no deben estar dentro de Git.
+
+El `.gitignore` debe contener:
+
+```gitignore
+credentials.json
+__pycache__/
+*.py[cod]
+*.log
+```
+
+---
+
+# 23. Prueba manual completa
+
+```bash
+cd /home/soporte/AUTO_REPORTS_AMISR_14
+```
+
+### 1. Escanear AMISR
+
+```bash
+/home/soporte/anaconda3/bin/python auto_scanner_2026.py
+```
+
+### 2. Generar resumen mensual
+
+```bash
+/home/soporte/anaconda3/bin/python auto_reporte_2026.py
+```
+
+### 3. Publicar en GitHub
+
+```bash
+/home/soporte/anaconda3/bin/python auto_send_2026.py
+```
+
+### 4. Actualizar Google Drive
+
+```bash
+/home/soporte/anaconda3/bin/python actualiza_google_drive_final.py
+```
+
+### 5. Verificar Cron
 
 ```bash
 crontab -l
 ```
 
-Se recomienda utilizar rutas absolutas porque `cron` puede ejecutarse con un entorno diferente al de una terminal interactiva.
-
 ---
 
-# 24. Comparación de los dos scripts
+# 24. Resultado final
 
-| Característica | `actualizar_google_sheets.py` | `actualizar_google_drive.py` |
-|---|---|---|
-| Destino | Google Sheets nativo | Excel `.xlsx` en Drive |
-| `gspread` | Sí | No |
-| Google Sheets API | Sí | No |
-| Google Drive API | No | Sí |
-| `openpyxl` | No | Sí |
-| Conserva formato Excel | No aplica | Sí |
-| Convierte XLSX | No | No |
-| Modifica celdas específicas | Sí | Sí |
-
----
-
-# 25. Arquitectura final
+El proceso completo permite automatizar:
 
 ```text
-                         GITHUB
-                            │
-                            ▼
-                REPORTE_DIGDT_2026.csv
-                            │
-                            ▼
-                         pandas
-                            │
-                            ▼
-                    horas AMISR-14
-                            │
-              ┌─────────────┴─────────────┐
-              │                           │
-              ▼                           ▼
-     Google Sheets                    Google Drive
-              │                           │
-              │                           ▼
-              │                    DONE_POI 2026 ROJ.xlsx
-              │                           │
-              │                           ▼
-              │                       openpyxl
-              │                           │
-              │                           ▼
-              │                   modificar 7 celdas
-              │                           │
-              ▼                           ▼
-       Sheet actualizado             XLSX actualizado
-```
-
----
-
-# 26. Resultado
-
-El sistema permite mantener el proceso automatizado de actualización de reportes AMISR-14 sin exponer las credenciales de Google en GitHub.
-
-La información pública del proyecto queda limitada al código y documentación, mientras que la cuenta de servicio permanece protegida en el servidor.
-
-Para el escenario actual, `actualizar_google_drive.py` es el script adecuado cuando el documento oficial continúa siendo:
-
-```text
+AMISR-14
+   │
+   ▼
+Scanner de datos
+   │
+   ▼
+Reporte diario/acumulativo
+   │
+   ▼
+Resumen mensual
+   │
+   ▼
+Publicación GitHub
+   │
+   ▼
+Lectura del CSV
+   │
+   ▼
+Cálculo ISR + ESF
+   │
+   ▼
+Actualización DCG
+   │
+   ├── J14:N14 → ISR
+   ├── J15:N15 → ESF
+   │
+   ▼
+Actualización DIGDT
+   │
+   └── J13:N13 → ISR + ESF
+   │
+   ▼
 DONE_POI 2026 ROJ.xlsx
 ```
 
-y se desea conservarlo como archivo Excel en Google Drive.
+Las celdas no contempladas en este proceso permanecen sin modificación intencional.
 
 ---
 
-## Autor
+# 25. Autor
 
-**Alexander Valdez**  
-Especialista de Radar – Ingeniero Electrónico  
-Radio Observatorio de Jicamarca – IGP
+**Alexander Valdez**
+Especialista de Radar – Ingeniero Electrónico
+Radio Observatorio de Jicamarca (ROJ)
+Instituto Geofísico del Perú (IGP)
+
+**Proyecto:** Automatización de reportes AMISR-14
