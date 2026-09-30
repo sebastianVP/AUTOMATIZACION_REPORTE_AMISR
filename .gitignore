@@ -1,0 +1,12 @@
+# Credenciales
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# Excel generado/local
+*.xlsx
