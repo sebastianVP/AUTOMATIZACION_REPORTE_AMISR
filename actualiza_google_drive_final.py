@@ -74,6 +74,26 @@ def obtener_horas(df, mes, tipo):
 
 
 # ============================================================
+# OBTENER HORAS DE OTROS EXPERIMENTOS
+# ============================================================
+
+def obtener_horas_otros(df, mes):
+    """
+    Suma las horas de todos los experimentos del mes,
+    excepto ISR y ESF.
+
+    Incluye MES, MET, LPD y categorías futuras.
+    """
+
+    datos = df[
+        (df["MES"] == mes) &
+        (~df["TIPO"].isin(["ISR", "ESF"]))
+    ]
+
+    return round(datos["HORAS"].sum(), 2)
+
+
+# ============================================================
 # BUSCAR HOJA POR TEXTO
 # ============================================================
 
@@ -184,7 +204,7 @@ def actualizar_excel(archivo, horas):
     )
 
     # --------------------------------------------------------
-    # ACTUALIZAR MESES
+    # ACTUALIZAR MESES: DCG, OTROS Y DIGDT
     # --------------------------------------------------------
 
     print("\n📝 ACTUALIZANDO CELDAS:")
@@ -197,19 +217,23 @@ def actualizar_excel(archivo, horas):
 
         celda_isr = f"{columna}14"
         celda_esf = f"{columna}15"
+        celda_otros = f"{columna}16"
+
 
         dcg[celda_isr] = horas[f"{mes}_ISR"]
         dcg[celda_esf] = horas[f"{mes}_ESF"]
+        dcg[celda_otros] = horas[f"{mes}_OTROS"]
 
         # ----------------------------------------------------
-        # DIGDT
+        # DIGDT: TOTAL ISR + ESF + OTROS
         # ----------------------------------------------------
 
         celda_total = f"{columna}13"
 
         digdt[celda_total] = round(
             horas[f"{mes}_ISR"] +
-            horas[f"{mes}_ESF"],
+            horas[f"{mes}_ESF"] +
+            horas[f"{mes}_OTROS"],
             2
         )
 
@@ -227,6 +251,11 @@ def actualizar_excel(archivo, horas):
             f"   ✓ DCG!{celda_esf} → "
             f"{mes}_ESF = "
             f"{horas[f'{mes}_ESF']:.2f}"
+        )
+        
+        print(
+            f"   ✓ DCG!{celda_otros} → "
+            f"{mes}_OTROS = {horas[f'{mes}_OTROS']:.2f}"
         )
 
         print(
@@ -296,12 +325,18 @@ def actualizar():
     # 2. GENERAR HORAS DINÁMICAMENTE
     # --------------------------------------------------------
 
-    horas = {
-        f"{mes}_{tipo}": obtener_horas(df, mes, tipo)
-        for mes in MESES_COLUMNAS
-        for tipo in ["ISR", "ESF"]
-    }
+    #horas = {
+    #    f"{mes}_{tipo}": obtener_horas(df, mes, tipo)
+    #    for mes in MESES_COLUMNAS
+    #    for tipo in ["ISR", "ESF"]
+    #}
+    horas = {}
 
+    for mes in MESES_COLUMNAS:
+        horas[f"{mes}_ISR"] = obtener_horas(df, mes, "ISR")
+        horas[f"{mes}_ESF"] = obtener_horas(df, mes, "ESF")
+        horas[f"{mes}_OTROS"] = obtener_horas_otros(df, mes)
+        
     # --------------------------------------------------------
     # 3. MOSTRAR DATOS OBTENIDOS
     # --------------------------------------------------------
